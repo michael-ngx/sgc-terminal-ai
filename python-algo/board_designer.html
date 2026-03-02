@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>C1 Terminal – Board Designer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Consolas, monospace; background: #1a1a2e; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+  h1 { color: #0ff; margin-bottom: 4px; font-size: 1.4rem; }
+  .subtitle { color: #888; font-size: 0.8rem; margin-bottom: 12px; }
+
+  .controls { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; justify-content: center; }
+  .controls button {
+    padding: 6px 14px; border: 2px solid #555; border-radius: 6px;
+    background: #2a2a4a; color: #e0e0e0; cursor: pointer; font-size: 0.85rem;
+    transition: all 0.15s;
+  }
+  .controls button:hover { background: #3a3a5a; }
+  .controls button.active { border-color: #0ff; color: #0ff; background: #1a3a4a; }
+  .controls button.eraser.active { border-color: #f55; color: #f55; background: #4a1a1a; }
+
+  .legend { display: flex; gap: 16px; margin-bottom: 8px; font-size: 0.75rem; color: #aaa; flex-wrap: wrap; justify-content: center; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #555; }
+
+  .grid-wrapper { position: relative; margin-bottom: 16px; }
+  .row-labels, .col-labels { position: absolute; font-size: 9px; color: #666; }
+  #board {
+    display: grid;
+    gap: 1px;
+    background: #111;
+    border: 2px solid #333;
+    border-radius: 4px;
+    padding: 1px;
+  }
+  .cell {
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: bold;
+    border-radius: 2px; cursor: pointer;
+    transition: background 0.1s;
+    user-select: none;
+    position: relative;
+  }
+  .cell.in-bounds { background: #1e1e3a; }
+  .cell.in-bounds:hover { background: #2e2e5a; }
+  .cell.out-of-bounds { background: #0d0d15; cursor: default; }
+  .cell.enemy-half { background: #1a1a28; }
+  .cell.enemy-half:hover { background: #2a2a38; }
+  .cell.midline { border-top: 1px dashed #444; }
+
+  /* Unit colors */
+  .cell.wall     { background: #2a5a8a !important; color: #aad4ff; }
+  .cell.turret   { background: #8a2a2a !important; color: #ffaaaa; }
+  .cell.support  { background: #2a6a2a !important; color: #aaffaa; }
+  .cell.upgraded::after {
+    content: "★"; position: absolute; top: -2px; right: 0px;
+    font-size: 7px; color: #ffd700;
+  }
+
+  /* Output */
+  .output-section { width: 100%; max-width: 700px; margin-top: 8px; }
+  .output-section h3 { color: #0ff; font-size: 0.95rem; margin-bottom: 6px; }
+  .output-tabs { display: flex; gap: 4px; margin-bottom: 4px; }
+  .output-tabs button {
+    padding: 4px 12px; border: 1px solid #444; border-bottom: none;
+    border-radius: 4px 4px 0 0; background: #1a1a2e; color: #aaa;
+    cursor: pointer; font-size: 0.8rem;
+  }
+  .output-tabs button.active { background: #2a2a4a; color: #0ff; border-color: #0ff; }
+  textarea {
+    width: 100%; height: 200px; background: #0d0d1a; color: #7fff7f;
+    border: 1px solid #444; border-radius: 0 4px 4px 4px; padding: 10px;
+    font-family: Consolas, 'Courier New', monospace; font-size: 0.82rem;
+    resize: vertical;
+  }
+  .btn-row { display: flex; gap: 8px; margin-top: 6px; }
+  .btn-row button {
+    padding: 6px 16px; border: 1px solid #0ff; border-radius: 4px;
+    background: #1a3a4a; color: #0ff; cursor: pointer; font-size: 0.8rem;
+  }
+  .btn-row button:hover { background: #2a5a6a; }
+  .btn-row button.danger { border-color: #f55; color: #f55; background: #3a1a1a; }
+  .btn-row button.danger:hover { background: #5a2a2a; }
+
+  .stats { font-size: 0.75rem; color: #aaa; margin-top: 6px; }
+  .toast {
+    position: fixed; top: 20px; right: 20px; padding: 10px 18px;
+    background: #1a4a3a; color: #7fff7f; border-radius: 6px;
+    font-size: 0.85rem; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<h1>C1 Terminal – Board Designer</h1>
+<p class="subtitle">Click cells to place units. Export as Python code for your algo strategy.</p>
+
+<div class="controls">
+  <button id="btn-wall" class="active" onclick="setTool('wall')">🧱 Wall</button>
+  <button id="btn-turret" onclick="setTool('turret')">🔫 Turret</button>
+  <button id="btn-support" onclick="setTool('support')">🛡️ Support</button>
+  <button id="btn-upgrade" onclick="setTool('upgrade')">⭐ Upgrade</button>
+  <button id="btn-erase" class="eraser" onclick="setTool('erase')">✕ Erase</button>
+</div>
+
+<div class="legend">
+  <span><span class="swatch" style="background:#2a5a8a"></span> Wall (W)</span>
+  <span><span class="swatch" style="background:#8a2a2a"></span> Turret (T)</span>
+  <span><span class="swatch" style="background:#2a6a2a"></span> Support (S)</span>
+  <span>★ = Upgraded</span>
+  <span>Top half = enemy · Bottom half = yours</span>
+</div>
+
+<div class="grid-wrapper">
+  <div id="board"></div>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="output-section">
+  <h3>Generated Code</h3>
+  <div class="output-tabs">
+    <button class="active" onclick="switchTab('spawn')">attempt_spawn</button>
+    <button onclick="switchTab('plan')">Build Plan</button>
+    <button onclick="switchTab('dict')">Layout Dict</button>
+    <button onclick="switchTab('json')">JSON</button>
+  </div>
+  <textarea id="output" readonly></textarea>
+  <div class="btn-row">
+    <button onclick="copyOutput()">📋 Copy to Clipboard</button>
+    <button class="danger" onclick="clearBoard()">Clear Board</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SIZE = 28;
+const HALF = 14;
+
+let currentTool = 'wall';
+let currentTab = 'spawn';
+let board = {};       // { "x,y": { type: "wall"|"turret"|"support", upgraded: bool, side: "friendly"|"enemy" } }
+let isMouseDown = false;
+
+// Diamond bounds check (same as game engine)
+function inBounds(x, y) {
+  const half = HALF;
+  if (y < half) {
+    const rowSize = y + 1;
+    const sx = half - rowSize;
+    const ex = sx + 2 * rowSize - 1;
+    if (x >= sx && x <= ex) return true;
+  } else {
+    const rowSize = (SIZE - 1 - y) + 1;
+    const sx = half - rowSize;
+    const ex = sx + 2 * rowSize - 1;
+    if (x >= sx && x <= ex) return true;
+  }
+  return false;
+}
+
+function buildGrid() {
+  const el = document.getElementById('board');
+  el.style.gridTemplateColumns = `repeat(${SIZE}, 22px)`;
+  el.innerHTML = '';
+  for (let y = SIZE - 1; y >= 0; y--) {
+    for (let x = 0; x < SIZE; x++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.x = x;
+      cell.dataset.y = y;
+      if (!inBounds(x, y)) {
+        cell.classList.add('out-of-bounds');
+      } else {
+        cell.classList.add('in-bounds');
+        if (y >= HALF) cell.classList.add('enemy-half');
+        if (y === HALF) cell.classList.add('midline');
+
+        cell.addEventListener('mousedown', (e) => { e.preventDefault(); isMouseDown = true; handleCell(x, y, cell); });
+        cell.addEventListener('mouseenter', () => { if (isMouseDown) handleCell(x, y, cell); });
+      }
+
+      // Axis labels
+      if (x === 0 && inBounds(x, y)) {
+        cell.title = `y=${y}`;
+      }
+      if (y === 0 && inBounds(x, y)) {
+        cell.title = `x=${x}`;
+      }
+
+      el.appendChild(cell);
+    }
+  }
+}
+
+document.addEventListener('mouseup', () => { isMouseDown = false; });
+
+function handleCell(x, y, cellEl) {
+  const key = `${x},${y}`;
+  if (currentTool === 'erase') {
+    delete board[key];
+  } else if (currentTool === 'upgrade') {
+    if (board[key]) board[key].upgraded = true;
+    else return;
+  } else {
+    const side = y < HALF ? 'friendly' : 'enemy';
+    if (board[key] && board[key].type === currentTool && board[key].side === side) {
+      // clicking same type = toggle upgrade
+      board[key].upgraded = !board[key].upgraded;
+    } else {
+      board[key] = { type: currentTool, upgraded: false, side };
+    }
+  }
+  renderCell(x, y, cellEl);
+  updateOutput();
+}
+
+function renderCell(x, y, cellEl) {
+  cellEl.classList.remove('wall', 'turret', 'support', 'upgraded');
+  cellEl.textContent = '';
+  const key = `${x},${y}`;
+  const unit = board[key];
+  if (!unit) return;
+
+  cellEl.classList.add(unit.type);
+  if (unit.upgraded) cellEl.classList.add('upgraded');
+
+  const labels = { wall: 'W', turret: 'T', support: 'S' };
+  let lbl = labels[unit.type] || '?';
+  if (unit.side === 'enemy') lbl = lbl.toLowerCase();
+  cellEl.textContent = lbl;
+}
+
+function renderAll() {
+  const cells = document.querySelectorAll('.cell.in-bounds');
+  cells.forEach(c => {
+    const x = parseInt(c.dataset.x);
+    const y = parseInt(c.dataset.y);
+    renderCell(x, y, c);
+  });
+}
+
+function setTool(tool) {
+  currentTool = tool;
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + tool.replace('upgrade', 'upgrade')).classList.add('active');
+}
+
+// ---- Output generation ----
+
+function getUnitsByType(side) {
+  const result = { wall: [], turret: [], support: [], wall_upgrade: [], turret_upgrade: [], support_upgrade: [] };
+  for (const [key, unit] of Object.entries(board)) {
+    if (unit.side !== side) continue;
+    const [x, y] = key.split(',').map(Number);
+    result[unit.type].push([x, y]);
+    if (unit.upgraded) result[unit.type + '_upgrade'].push([x, y]);
+  }
+  return result;
+}
+
+function genSpawnCode(side = 'friendly') {
+  const units = getUnitsByType(side);
+  const typeMap = { wall: 'WALL', turret: 'TURRET', support: 'SUPPORT' };
+  let lines = [];
+
+  const prefix = side === 'enemy' ? 'enemy_' : '';
+
+  for (const utype of ['wall', 'turret', 'support']) {
+    const locs = units[utype];
+    if (locs.length === 0) continue;
+    const varName = `${prefix}${utype}_locations`;
+    const constName = typeMap[utype];
+    lines.push(`${varName} = ${JSON.stringify(locs)}`);
+    lines.push(`game_state.attempt_spawn(${constName}, ${varName})`);
+
+    const ulocs = units[utype + '_upgrade'];
+    if (ulocs.length > 0) {
+      const uVarName = `${prefix}${utype}_upgrade_locations`;
+      lines.push(`${uVarName} = ${JSON.stringify(ulocs)}`);
+      lines.push(`game_state.attempt_upgrade(${uVarName})`);
+    }
+    lines.push('');
+  }
+
+  if (lines.length === 0) return '# No units placed yet. Click cells on the grid above!';
+  return lines.join('\n');
+}
+
+function genBuildPlan(side = 'friendly') {
+  const units = getUnitsByType(side);
+  const typeMap = { wall: 'WALL', turret: 'TURRET', support: 'SUPPORT' };
+  let entries = [];
+
+  for (const utype of ['wall', 'turret', 'support']) {
+    for (const loc of units[utype]) {
+      entries.push(`    (${typeMap[utype]}, ${JSON.stringify(loc)}),`);
+    }
+  }
+  // Upgrades as separate entries
+  for (const utype of ['wall', 'turret', 'support']) {
+    for (const loc of units[utype + '_upgrade']) {
+      entries.push(`    (${typeMap[utype]}, ${JSON.stringify(loc)}, True),  # upgrade`);
+    }
+  }
+
+  if (entries.length === 0) return '# No units placed yet.';
+  return `build_plan = [\n${entries.join('\n')}\n]\nself.helpers.prioritized_build(game_state, build_plan)`;
+}
+
+function genDict(side = 'friendly') {
+  const units = getUnitsByType(side);
+  let lines = ['layout = {'];
+  for (const key of ['wall', 'turret', 'support', 'wall_upgrade', 'turret_upgrade', 'support_upgrade']) {
+    if (units[key].length > 0) {
+      lines.push(`    "${key}": ${JSON.stringify(units[key])},`);
+    }
+  }
+  lines.push('}');
+  if (lines.length === 2) return '# No units placed yet.';
+  return lines.join('\n');
+}
+
+function genJSON(side = 'friendly') {
+  const units = getUnitsByType(side);
+  const clean = {};
+  for (const key of ['wall', 'turret', 'support', 'wall_upgrade', 'turret_upgrade', 'support_upgrade']) {
+    if (units[key].length > 0) clean[key] = units[key];
+  }
+  if (Object.keys(clean).length === 0) return '// No units placed yet.';
+  return JSON.stringify(clean, null, 2);
+}
+
+function updateOutput() {
+  const generators = { spawn: genSpawnCode, plan: genBuildPlan, dict: genDict, json: genJSON };
+  document.getElementById('output').value = generators[currentTab]();
+  updateStats();
+}
+
+function updateStats() {
+  const f = getUnitsByType('friendly');
+  const e = getUnitsByType('enemy');
+  const fCount = f.wall.length + f.turret.length + f.support.length;
+  const eCount = e.wall.length + e.turret.length + e.support.length;
+  const fUp = f.wall_upgrade.length + f.turret_upgrade.length + f.support_upgrade.length;
+
+  // Rough SP cost estimate (Wall=1, Turret=2, Support=7 based on config)
+  const costs = { wall: 1, turret: 2, support: 7 };
+  const upgCosts = { wall: 1, turret: 4, support: 7 };  // approximate
+  let totalSP = 0;
+  for (const utype of ['wall', 'turret', 'support']) {
+    totalSP += f[utype].length * costs[utype];
+    totalSP += f[utype + '_upgrade'].length * (upgCosts[utype] || 0);
+  }
+
+  document.getElementById('stats').textContent =
+    `Friendly: ${fCount} structures (${fUp} upgraded) · ~${totalSP} SP cost  |  Enemy: ${eCount} structures`;
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.output-tabs button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.output-tabs button').forEach(b => {
+    if (b.textContent.toLowerCase().includes(tab === 'spawn' ? 'attempt' : tab)) b.classList.add('active');
+  });
+  updateOutput();
+}
+
+function copyOutput() {
+  const ta = document.getElementById('output');
+  navigator.clipboard.writeText(ta.value).then(() => showToast('Copied to clipboard!'));
+}
+
+function clearBoard() {
+  board = {};
+  renderAll();
+  updateOutput();
+  showToast('Board cleared');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+// Init
+buildGrid();
+updateOutput();
+</script>
+</body>
+</html>
