@@ -233,7 +233,7 @@ DESTRUCTOR = 2 # turret
 PING = 3       # scout
 EMP = 4        # demolisher
 SCRAMBLER = 5  # interceptor
-MAX_HP = {FILTER:60, ENCRYPTOR:30, DESTRUCTOR:75, PING:15, EMP:5, SCRAMBLER:40}
+MAX_HP = {FILTER:75, ENCRYPTOR:30, DESTRUCTOR:90, PING:15, EMP:5, SCRAMBLER:40}
 SPEED = {'1':.25, '2':.5, '3':1, '4':2, '5':4, '6':8} # speed versions, key is user input (number)
 
 
@@ -359,7 +359,7 @@ class Unit:
 			 self.unit_type == EMP or \
 			 self.unit_type == SCRAMBLER:
 				verts = GET_VERTS[self.unit_type](self.x, self.y)
-				polygon = Polygon(verts, True)
+				polygon = Polygon(verts, closed=True)
 
 				self.polygons.append(polygon)
 				self.patches.append(ax.add_patch(polygon))
@@ -401,8 +401,9 @@ class Unit:
 			self.patches[1].set_alpha(0.3)
 
 		if self.stability > MAX_HP[self.unit_type]:
-			self.patches[1].set_fill(False)
-			self.patches[1].set_alpha(0.5)
+			if len(self.patches) > 1:
+				self.patches[1].set_fill(False)
+				self.patches[1].set_alpha(0.5)
 
 	# checks the stability and if greater than max for a mobile unit adds a new Circle
 	def check_stability(self, count, ax):
